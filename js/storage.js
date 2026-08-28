@@ -1,6 +1,8 @@
 /**
  * Storage.js — 数据层
  * 管理 localStorage 中的孩子档案和日常记录
+ * 双写机制：本地写入成功后，同步入队 Database（js/database.js），
+ * 连接配置好后自动写入数据库（未配置时队列静默积压，不影响使用）
  */
 
 const Store = {
@@ -17,6 +19,7 @@ const Store = {
 
   saveChild(profile) {
     localStorage.setItem(this.KEYS.CHILD, JSON.stringify(profile));
+    this._sync('saveChild', profile);
   },
 
   /* ===== 记录 CRUD ===== */
@@ -39,6 +42,7 @@ const Store = {
     record.updatedAt = record.createdAt;
     records.push(record);
     localStorage.setItem(this.KEYS.RECORDS, JSON.stringify(records));
+    this._sync('upsertRecord', record);
     return record;
   },
 
@@ -48,6 +52,7 @@ const Store = {
     if (idx === -1) return null;
     records[idx] = { ...records[idx], ...updates, id, updatedAt: new Date().toISOString() };
     localStorage.setItem(this.KEYS.RECORDS, JSON.stringify(records));
+    this._sync('upsertRecord', records[idx]);
     return records[idx];
   },
 
@@ -55,11 +60,13 @@ const Store = {
     let records = this.getRecords();
     records = records.filter(r => r.id !== id);
     localStorage.setItem(this.KEYS.RECORDS, JSON.stringify(records));
+    this._sync('deleteRecord', { id });
   },
 
   /* ===== 批量操作 ===== */
   clearAllRecords() {
     localStorage.removeItem(this.KEYS.RECORDS);
+    this._sync('replaceAll', { child: this.getChild(), records: [] });
   },
 
   getAllData() {
@@ -76,6 +83,14 @@ const Store = {
     if (data.child) this.saveChild(data.child);
     if (Array.isArray(data.records)) {
       localStorage.setItem(this.KEYS.RECORDS, JSON.stringify(data.records));
+      this._sync('replaceAll', { child: this.getChild(), records: data.records });
+    }
+  },
+
+  /* ===== 数据库同步（双写）===== */
+  _sync(op, payload) {
+    if (typeof Database !== 'undefined' && Database.enqueue) {
+      Database.enqueue(op, payload);
     }
   },
 

@@ -1182,6 +1182,33 @@ const App = {
       </div>
     `;
 
+    // 数据库同步
+    const dbStatus = Database.getStatus();
+    html += `
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">🗄️ 数据库同步</div>
+          <span class="db-status-badge ${dbStatus.configured ? 'db-on' : 'db-off'}">
+            ${dbStatus.configured ? '已启用' : '未配置'}
+          </span>
+        </div>
+        <p style="color: var(--text-muted); font-size: 14px; margin-bottom: 12px;">
+          ${dbStatus.configured
+            ? `目标：<code>${this._escape(dbStatus.apiBaseUrl)}</code>`
+            : '连接已预留，尚未填写。打开 <code>js/database.js</code>，在 <code>DB_CONFIG</code> 中填写 API 地址并将 <code>enabled</code> 改为 <code>true</code> 即可启用（建表脚本见 <code>database/schema.sql</code>）。'}
+        </p>
+        <p style="color: var(--text-muted); font-size: 14px; margin-bottom: 16px;">
+          待同步变更：<strong style="color: var(--pink-dark);">${dbStatus.pending}</strong> 条
+          （连接配置好后，新增/修改/删除的记录会自动写入数据库）
+        </p>
+        <div class="data-actions">
+          <button class="btn btn-secondary" onclick="App.dbTestConnection()">🔌 测试连接</button>
+          <button class="btn btn-teal" onclick="App.dbSyncNow()">🔄 立即同步</button>
+          <button class="btn btn-primary" onclick="App.dbPushAll()">☁️ 全量推送</button>
+        </div>
+      </div>
+    `;
+
     // 数据导入
     html += `
       <div class="card">
@@ -1249,6 +1276,37 @@ const App = {
 
   doExportJSON() {
     Exporter.exportJSON(Store.getAllData());
+  },
+
+  /* ===== 数据库同步操作 ===== */
+  async dbTestConnection() {
+    this.toast('正在测试数据库连接…', 'info');
+    const result = await Database.testConnection();
+    this.toast(result.message, result.ok ? 'success' : 'error');
+  },
+
+  async dbSyncNow() {
+    const result = await Database.flush();
+    if (result.skipped) {
+      this.toast('请先在 js/database.js 中填写 DB_CONFIG 并启用', 'warning');
+      return;
+    }
+    if (result.synced > 0 && result.failed === 0) {
+      this.toast(`同步成功：${result.synced} 条变更已写入数据库`, 'success');
+    } else if (result.failed > 0) {
+      this.toast(`部分失败：成功 ${result.synced} 条，失败 ${result.failed} 条（已保留在队列）`, 'warning');
+    } else {
+      this.toast('队列已清空，没有待同步的变更', 'info');
+    }
+    this.switchTab('settings');
+  },
+
+  async dbPushAll() {
+    this.showConfirm('全量推送', '将把本地全部档案和记录推送到数据库（覆盖服务端数据）。确定继续？', async () => {
+      const result = await Database.pushAll();
+      this.toast(result.message, result.ok ? 'success' : 'error');
+      this.switchTab('settings');
+    });
   },
 
   importJSON(file) {

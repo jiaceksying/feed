@@ -1174,3 +1174,30 @@ img { max-width: 100%; display: block; }
   .record-card { box-shadow: none; border: 1px solid #ddd; page-break-inside: avoid; }
   body { background: #fff; }
 }
+
+/* ===== 数据库同步状态卡片 ===== */
+.db-status-badge {
+  display: inline-block;
+  padding: 3px 12px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+}
+.db-status-badge.db-on {
+  background: #E1F7EE;
+  color: #1B8A5A;
+}
+.db-status-badge.db-off {
+  background: #FFF3E0;
+  color: #C77700;
+}
+.card code {
+  background: var(--pink-bg, #FFF0F5);
+  border: 1px solid var(--pink-light, #FFC2D6);
+  border-radius: 4px;
+  padding: 1px 6px;
+  font-size: 12.5px;
+  font-family: 'Nunito', monospace;
+  color: var(--pink-dark, #E84C7E);
+}
