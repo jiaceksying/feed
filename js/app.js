@@ -40,11 +40,16 @@ const App = {
   POOP_COLORS: ['黄色', '金黄色', '棕色', '绿色', '黄绿色', '黑色', '白色'],
   SOLID_FOOD_PRESETS: ['米粉', '果泥', '菜泥', '蛋黄', '肉泥', '面条', '粥', '馒头', '豆腐', '鱼泥'],
 
-  init() {
+  async init() {
+    // 从后端数据库拉取全部数据作为唯一数据源
+    const res = await Store.load();
     const child = Store.getChild();
     if (child) {
       this.state.avatar = child.avatar || '👶';
       this._updateNavChild(child);
+    }
+    if (res.offline) {
+      this.toast('后端数据库暂不可用，当前显示的是本地离线缓存', 'warning');
     }
     this.switchTab('timeline');
   },
@@ -755,7 +760,7 @@ const App = {
     return entries;
   },
 
-  saveRecord() {
+  async saveRecord() {
     const date = document.getElementById('recordDate').value;
     if (!date) {
       this.toast('请选择日期', 'warning');
@@ -785,14 +790,19 @@ const App = {
       notes: document.getElementById('recordNotes').value.trim(),
     };
 
-    if (this.state.editingId) {
-      Store.updateRecord(this.state.editingId, record);
-      this.toast('记录已更新！', 'success');
-      this.cancelEdit();
-    } else {
-      Store.addRecord(record);
-      this.toast('记录已添加！', 'success');
-      this.switchTab('add');
+    try {
+      if (this.state.editingId) {
+        await Store.updateRecord(this.state.editingId, record);
+        this.toast('记录已更新！', 'success');
+        this.cancelEdit();
+      } else {
+        await Store.addRecord(record);
+        this.toast('记录已添加！', 'success');
+        this.switchTab('add');
+      }
+    } catch (err) {
+      this.toast('保存失败（后端不可达）：' + err.message, 'error');
+      return;
     }
     this._updateNavChild(Store.getChild());
   },
@@ -814,10 +824,14 @@ const App = {
   },
 
   deleteRecord(id) {
-    this.showConfirm('删除记录', '确定要删除这条记录吗？删除后无法恢复。', () => {
-      Store.deleteRecord(id);
-      this.toast('记录已删除', 'success');
-      this._renderTimelineRefresh();
+    this.showConfirm('删除记录', '确定要删除这条记录吗？删除后无法恢复。', async () => {
+      try {
+        await Store.deleteRecord(id);
+        this.toast('记录已删除', 'success');
+        this._renderTimelineRefresh();
+      } catch (err) {
+        this.toast('删除失败（后端不可达）：' + err.message, 'error');
+      }
     });
   },
 
@@ -1182,28 +1196,28 @@ const App = {
       </div>
     `;
 
-    // 数据库同步
-    const dbStatus = Database.getStatus();
+    // 后端数据存储状态
+    const online = Store.isOnline();
+    const pending = Store.pendingCount();
     html += `
       <div class="card">
         <div class="card-header">
-          <div class="card-title">🗄️ 数据库同步</div>
-          <span class="db-status-badge ${dbStatus.configured ? 'db-on' : 'db-off'}">
-            ${dbStatus.configured ? '已启用' : '未配置'}
+          <div class="card-title">🗄️ 后端数据存储</div>
+          <span class="db-status-badge ${online ? 'db-on' : 'db-off'}">
+            ${online ? '在线' : '离线'}
           </span>
         </div>
         <p style="color: var(--text-muted); font-size: 14px; margin-bottom: 12px;">
-          ${dbStatus.configured
-            ? `目标：<code>${this._escape(dbStatus.apiBaseUrl)}</code>`
-            : '连接已预留，尚未填写。打开 <code>js/database.js</code>，在 <code>DB_CONFIG</code> 中填写 API 地址并将 <code>enabled</code> 改为 <code>true</code> 即可启用（建表脚本见 <code>database/schema.sql</code>）。'}
+          数据由后端数据库（MySQL）统一存储，前端展示与保存均依赖它。
+          目标：<code>${this._escape(DB_CONFIG.apiBaseUrl)}</code>
         </p>
         <p style="color: var(--text-muted); font-size: 14px; margin-bottom: 16px;">
-          待同步变更：<strong style="color: var(--pink-dark);">${dbStatus.pending}</strong> 条
-          （连接配置好后，新增/修改/删除的记录会自动写入数据库）
+          离线待重试变更：<strong style="color: var(--pink-dark);">${pending}</strong> 条
+          ${pending > 0 ? '（恢复连接后自动重试）' : '（后端在线时即时写入）'}
         </p>
         <div class="data-actions">
           <button class="btn btn-secondary" onclick="App.dbTestConnection()">🔌 测试连接</button>
-          <button class="btn btn-teal" onclick="App.dbSyncNow()">🔄 立即同步</button>
+          <button class="btn btn-teal" onclick="App.dbReload()">🔄 重新加载</button>
           <button class="btn btn-primary" onclick="App.dbPushAll()">☁️ 全量推送</button>
         </div>
       </div>
@@ -1249,7 +1263,7 @@ const App = {
     });
   },
 
-  saveChildProfile() {
+  async saveChildProfile() {
     const name = document.getElementById('childName').value.trim();
     if (!name) {
       this.toast('请输入宝贝姓名', 'warning');
@@ -1261,9 +1275,13 @@ const App = {
       birthday: document.getElementById('childBirthday').value,
       avatar: this.state.avatar,
     };
-    Store.saveChild(profile);
-    this._updateNavChild(profile);
-    this.toast('档案已保存！', 'success');
+    try {
+      await Store.saveChild(profile);
+      this._updateNavChild(profile);
+      this.toast('档案已保存！', 'success');
+    } catch (err) {
+      this.toast('保存失败（后端不可达）：' + err.message, 'error');
+    }
   },
 
   doExportPDF() {
@@ -1278,33 +1296,41 @@ const App = {
     Exporter.exportJSON(Store.getAllData());
   },
 
-  /* ===== 数据库同步操作 ===== */
+  /* ===== 后端数据操作 ===== */
   async dbTestConnection() {
-    this.toast('正在测试数据库连接…', 'info');
-    const result = await Database.testConnection();
+    this.toast('正在测试后端连接…', 'info');
+    const result = await ApiClient.testConnection();
     this.toast(result.message, result.ok ? 'success' : 'error');
   },
 
-  async dbSyncNow() {
-    const result = await Database.flush();
-    if (result.skipped) {
-      this.toast('请先在 js/database.js 中填写 DB_CONFIG 并启用', 'warning');
-      return;
-    }
-    if (result.synced > 0 && result.failed === 0) {
-      this.toast(`同步成功：${result.synced} 条变更已写入数据库`, 'success');
-    } else if (result.failed > 0) {
-      this.toast(`部分失败：成功 ${result.synced} 条，失败 ${result.failed} 条（已保留在队列）`, 'warning');
-    } else {
-      this.toast('队列已清空，没有待同步的变更', 'info');
+  async dbReload() {
+    this.toast('正在从后端重新加载…', 'info');
+    try {
+      const res = await Store.load();
+      if (res.offline) {
+        this.toast('后端暂不可用，仍显示本地离线缓存', 'warning');
+      } else {
+        this.toast('已从后端重新加载 ✅', 'success');
+        const child = Store.getChild();
+        if (child) {
+          this.state.avatar = child.avatar || '👶';
+          this._updateNavChild(child);
+        }
+      }
+    } catch (err) {
+      this.toast('加载失败：' + err.message, 'error');
     }
     this.switchTab('settings');
   },
 
   async dbPushAll() {
-    this.showConfirm('全量推送', '将把本地全部档案和记录推送到数据库（覆盖服务端数据）。确定继续？', async () => {
-      const result = await Database.pushAll();
-      this.toast(result.message, result.ok ? 'success' : 'error');
+    this.showConfirm('全量推送', '将用本地数据覆盖后端数据库（含档案与全部记录）。确定继续？', async () => {
+      try {
+        const result = await Store.pushAll();
+        this.toast(result.message, 'success');
+      } catch (err) {
+        this.toast('推送失败（后端不可达）：' + err.message, 'error');
+      }
       this.switchTab('settings');
     });
   },
@@ -1315,15 +1341,19 @@ const App = {
     reader.onload = (e) => {
       try {
         const data = JSON.parse(e.target.result);
-        this.showConfirm('导入数据', `即将导入 ${data.records ? data.records.length : 0} 条记录，将覆盖现有数据。确定继续？`, () => {
-          Store.importData(data);
-          const child = Store.getChild();
-          if (child) {
-            this.state.avatar = child.avatar || '👶';
-            this._updateNavChild(child);
+        this.showConfirm('导入数据', `即将导入 ${data.records ? data.records.length : 0} 条记录，将覆盖现有数据。确定继续？`, async () => {
+          try {
+            await Store.importData(data);
+            const child = Store.getChild();
+            if (child) {
+              this.state.avatar = child.avatar || '👶';
+              this._updateNavChild(child);
+            }
+            this.toast('数据导入成功！', 'success');
+            this.switchTab('timeline');
+          } catch (err) {
+            this.toast('导入失败（后端不可达）：' + err.message, 'error');
           }
-          this.toast('数据导入成功！', 'success');
-          this.switchTab('timeline');
         });
       } catch (err) {
         this.toast('导入失败：文件格式不正确', 'error');
@@ -1333,13 +1363,16 @@ const App = {
   },
 
   clearAllData() {
-    this.showConfirm('清空所有记录', '这将永久删除所有记录和孩子档案，且无法恢复。确定要继续吗？', () => {
-      Store.clearAllRecords();
-      localStorage.removeItem(Store.KEYS.CHILD);
-      this.state.avatar = '👶';
-      this._updateNavChild(null);
-      this.toast('所有数据已清空', 'success');
-      this.switchTab('settings');
+    this.showConfirm('清空所有记录', '这将永久删除所有记录和孩子档案，且无法恢复。确定要继续吗？', async () => {
+      try {
+        await Store.clearAllRecords();
+        this.state.avatar = '👶';
+        this._updateNavChild(null);
+        this.toast('所有数据已清空', 'success');
+        this.switchTab('settings');
+      } catch (err) {
+        this.toast('清空失败（后端不可达）：' + err.message, 'error');
+      }
     });
   },
 
@@ -1354,11 +1387,12 @@ const App = {
     }
   },
 
-  _doAddDemo() {
-    const child = { name: '小苹果', gender: 'girl', birthday: '2022-06-15', avatar: '👧' };
-    Store.saveChild(child);
-    this.state.avatar = '👧';
-    this._updateNavChild(child);
+  async _doAddDemo() {
+    try {
+      const child = { name: '小苹果', gender: 'girl', birthday: '2022-06-15', avatar: '👧' };
+      await Store.saveChild(child);
+      this.state.avatar = '👧';
+      this._updateNavChild(child);
 
     const demo = [
       { date: '2026-07-01', mood: '😊', height: 94.5, weight: 13.8, tags: ['户外活动','去公园'], activities: '今天去了小区旁边的公园玩滑梯，交到了新朋友！', breakfast: '小米粥 + 鸡蛋羹', lunch: '软米饭 + 番茄炒蛋 + 青菜', dinner: '南瓜面条', snacks: '酸奶 + 草莓', sleepHours: 10.5, milestones: '可以自己上下楼梯了！', notes: '天气很好，晒了不少太阳。',
@@ -1402,9 +1436,14 @@ const App = {
         solidFoods: [ {time:'12:00', food:'糖醋排骨', amount:'两块', note:'外婆做的，爱吃'}, {time:'15:00', food:'西瓜', amount:'一大块', note:''} ],
       },
     ];
-    demo.forEach(r => Store.addRecord(r));
-    this.toast(`已添加 ${demo.length} 条示例记录`, 'success');
-    this.switchTab('timeline');
+      for (const r of demo) {
+        try { await Store.addRecord(r); } catch (err) { /* 离线则入队列，忽略 */ }
+      }
+      this.toast(`已添加 ${demo.length} 条示例记录`, 'success');
+      this.switchTab('timeline');
+    } catch (err) {
+      this.toast('添加示例数据失败（后端不可达）：' + err.message, 'error');
+    }
   },
 
   /* ================================================================
