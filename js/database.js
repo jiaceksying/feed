@@ -15,8 +15,10 @@
  */
 
 const DB_CONFIG = {
-  // 后端 API 地址；填写好即生效（后端由 backend/start.bat 启动，见 README）
-  apiBaseUrl: 'http://8.156.64.159:8080/api',
+  // 后端 API 地址（绝对地址；前后端不在同一台服务器时使用）。
+  // 已指向后端 HTTPS 端口 8443（自签证书），这样前端以 https 打开时不会被混合内容拦截。
+  // 若后端未启用 HTTPS（server.ssl.enabled=false），请改回 http://8.156.64.159:8080/api。
+  apiBaseUrl: 'https://8.156.64.159:8443/api',
   authToken: '',          // 可选：Bearer Token
   timeout: 15000,         // 请求超时（毫秒）
 };
