@@ -15,10 +15,10 @@
  */
 
 const DB_CONFIG = {
-  // 后端 API 地址（绝对地址；前后端不在同一台服务器时使用）。
-  // 已指向后端 HTTPS 端口 8443（自签证书），这样前端以 https 打开时不会被混合内容拦截。
-  // 若后端未启用 HTTPS（server.ssl.enabled=false），请改回 http://8.156.64.159:8080/api。
-  apiBaseUrl: 'https://8.156.64.159:8443/api',
+  // 后端 API 地址（**绝对 HTTPS 地址**；前后端部署在不同服务器，不能用相对 /api）。
+  // TLS 由后端服务器上的 Nginx 终结（正式证书，监听 443），/api 由 Nginx 反向代理转发到后端 8080；
+  // 后端 Java 服务本身只提供 HTTP，不含任何 SSL 代码。8443 已弃用。
+  apiBaseUrl: 'https://8.156.64.159/api',
   authToken: '',          // 可选：Bearer Token
   timeout: 15000,         // 请求超时（毫秒）
 };
